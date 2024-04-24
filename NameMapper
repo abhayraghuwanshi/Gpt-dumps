@@ -30,3 +30,26 @@ public class MyAssertionMapper implements AssertionMapper {
         }
     }
 }
+
+
+import weblogic.servlet.security.ServletAuthentication;
+import weblogic.servlet.security.ServletAuthentication.IdentityAsserter;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.security.auth.Subject;
+import javax.security.auth.login.LoginException;
+import java.security.Principal;
+import java.util.Map;
+
+public class CustomSAML2IdentityAsserter extends SAML2IdentityAsserterV2 {
+
+    @Override
+    public Subject assertIdentity(HttpServletRequest request, HttpServletResponse response) throws LoginException {
+        // Extract attributes from the SAML assertion and map them to WebLogic Server subjects
+        
+        // Implement attribute mapping logic here
+        
+        // Return the Subject object with mapped attributes
+    }
+}
+
