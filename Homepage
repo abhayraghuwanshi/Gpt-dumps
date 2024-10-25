@@ -1,0 +1,31 @@
+Please describe your idea:
+
+The idea is to create a team homepage for each team in the organization. This page would serve as a centralized hub, displaying key information about each team, including team members, services owned or used by the team, dependencies, documentation links, and relevant performance metrics.
+
+What problem are you trying to solve?
+
+Currently, there’s a lack of centralized visibility into each team’s resources, dependencies, and points of contact. This makes it difficult to manage dependencies across teams, slows down troubleshooting during incidents, complicates onboarding for new hires, and increases the time spent searching for relevant resources. Without a clear view of dependencies and ownership, collaboration and cross-team support are often hampered.
+
+What is your proposal?
+
+My proposal is to develop a team homepage for every team within the organization. Each page would provide:
+
+	•	A team directory with members, roles, and contact information
+	•	A list of services the team uses or manages, including their status and dependencies
+	•	Links to essential documentation and other resources
+	•	Key performance metrics or monitoring details for owned services
+	•	Dependency maps to help visualize cross-team service relationships
+
+This can be achieved by gathering data from existing systems and displaying it in a user-friendly and accessible format.
+
+What is the benefit of your proposal & how will it help the bank?
+
+The team homepage proposal would bring multiple benefits:
+
+	•	Improved Onboarding: New hires can quickly get familiar with team structures, responsibilities, and resources.
+	•	Enhanced Incident Management: Teams can quickly identify dependencies and escalate incidents to the right contacts, reducing downtime and enhancing service reliability.
+	•	Efficient Collaboration: Having a clear view of dependencies and ownership enables seamless collaboration and reduces inter-team communication delays.
+	•	Operational Oversight: Monitoring and dependency data allows teams to proactively manage service health, prioritize resources effectively, and plan for capacity.
+	•	Knowledge Sharing: By centralizing resources and documentation, the bank fosters a culture of knowledge-sharing, leading to more efficient processes and reducing duplicated efforts.
+
+This centralized approach helps the bank streamline operations, optimize resource management, and ultimately deliver more reliable services to customers.
