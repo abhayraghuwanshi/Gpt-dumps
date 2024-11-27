@@ -1,0 +1,380 @@
+export interface Team {
+  email: string;
+  title: string;
+  skills: string;
+  joined: string;
+}
+
+export interface Product {
+  title: string;
+  description: string;
+}
+
+export interface TeamAchievement {
+  title: string;
+  date: string;
+  description: string;
+}
+
+export interface Access {
+  roleName: string;
+  roleDescription: string;
+  product: string;
+  howToGetIt: string;
+}
+
+
+
+import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
+import { Team, Product, TeamAchievement, Access } from './models';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class DataService {
+  private teams = new BehaviorSubject<Team[]>([
+    { email: 'abc@gmail.com', title: 'SDE', skills: 'Java', joined: 'April 2022' },
+  ]);
+
+  private products = new BehaviorSubject<Product[]>([
+    { title: 'hello', description: 'sample desc' },
+  ]);
+
+  private teamAchievements = new BehaviorSubject<TeamAchievement[]>([
+    { title: 'hello', date: '', description: 'this is sample description' },
+  ]);
+
+  private accessRoles = new BehaviorSubject<Access[]>([
+    {
+      roleName: 'view',
+      roleDescription: 'which role',
+      product: 'ABC',
+      howToGetIt: 'Step to get access',
+    },
+  ]);
+
+  getTeams() {
+    return this.teams.asObservable();
+  }
+
+  updateTeams(data: Team[]) {
+    this.teams.next(data);
+  }
+
+  getProducts() {
+    return this.products.asObservable();
+  }
+
+  updateProducts(data: Product[]) {
+    this.products.next(data);
+  }
+
+  getTeamAchievements() {
+    return this.teamAchievements.asObservable();
+  }
+
+  updateTeamAchievements(data: TeamAchievement[]) {
+    this.teamAchievements.next(data);
+  }
+
+  getAccessRoles() {
+    return this.accessRoles.asObservable();
+  }
+
+  updateAccessRoles(data: Access[]) {
+    this.accessRoles.next(data);
+  }
+}
+
+
+
+
+import { Component, OnInit } from '@angular/core';
+import { FormBuilder, FormGroup } from '@angular/forms';
+import { DataService } from './data.service';
+import { Team, Product, TeamAchievement, Access } from './models';
+
+@Component({
+  selector: 'app-crud',
+  templateUrl: './crud.component.html',
+  styleUrls: ['./crud.component.css']
+})
+export class CrudComponent implements OnInit {
+  teams: Team[] = [];
+  products: Product[] = [];
+  teamAchievements: TeamAchievement[] = [];
+  accessRoles: Access[] = [];
+
+  teamForm!: FormGroup;
+  productForm!: FormGroup;
+  achievementForm!: FormGroup;
+  accessForm!: FormGroup;
+
+  constructor(private fb: FormBuilder, private dataService: DataService) {}
+
+  ngOnInit(): void {
+    // Initialize forms
+    this.teamForm = this.fb.group({
+      email: [''],
+      title: [''],
+      skills: [''],
+      joined: [''],
+    });
+
+    this.productForm = this.fb.group({
+      title: [''],
+      description: [''],
+    });
+
+    this.achievementForm = this.fb.group({
+      title: [''],
+      date: [''],
+      description: [''],
+    });
+
+    this.accessForm = this.fb.group({
+      roleName: [''],
+      roleDescription: [''],
+      product: [''],
+      howToGetIt: [''],
+    });
+
+    // Load data
+    this.dataService.getTeams().subscribe((data) => (this.teams = data));
+    this.dataService.getProducts().subscribe((data) => (this.products = data));
+    this.dataService.getTeamAchievements().subscribe((data) => (this.teamAchievements = data));
+    this.dataService.getAccessRoles().subscribe((data) => (this.accessRoles = data));
+  }
+
+  // CRUD Operations
+  addTeam() {
+    this.teams.push(this.teamForm.value);
+    this.dataService.updateTeams(this.teams);
+    this.teamForm.reset();
+  }
+
+  deleteTeam(index: number) {
+    this.teams.splice(index, 1);
+    this.dataService.updateTeams(this.teams);
+  }
+
+  addProduct() {
+    this.products.push(this.productForm.value);
+    this.dataService.updateProducts(this.products);
+    this.productForm.reset();
+  }
+
+  deleteProduct(index: number) {
+    this.products.splice(index, 1);
+    this.dataService.updateProducts(this.products);
+  }
+
+  addAchievement() {
+    this.teamAchievements.push(this.achievementForm.value);
+    this.dataService.updateTeamAchievements(this.teamAchievements);
+    this.achievementForm.reset();
+  }
+
+  deleteAchievement(index: number) {
+    this.teamAchievements.splice(index, 1);
+    this.dataService.updateTeamAchievements(this.teamAchievements);
+  }
+
+  addAccessRole() {
+    this.accessRoles.push(this.accessForm.value);
+    this.dataService.updateAccessRoles(this.accessRoles);
+    this.accessForm.reset();
+  }
+
+  deleteAccessRole(index: number) {
+    this.accessRoles.splice(index, 1);
+    this.dataService.updateAccessRoles(this.accessRoles);
+  }
+}
+
+
+
+<div>
+  <h2>Teams</h2>
+  <form [formGroup]="teamForm" (ngSubmit)="addTeam()">
+    <input formControlName="email" placeholder="Email" />
+    <input formControlName="title" placeholder="Title" />
+    <input formControlName="skills" placeholder="Skills" />
+    <input formControlName="joined" placeholder="Joined" />
+    <button type="submit">Add Team</button>
+  </form>
+  <ul>
+    <li *ngFor="let team of teams; let i = index">
+      {{ team.email }} - {{ team.title }} - {{ team.skills }} - {{ team.joined }}
+      <button (click)="deleteTeam(i)">Delete</button>
+    </li>
+  </ul>
+
+  <h2>Products</h2>
+  <form [formGroup]="productForm" (ngSubmit)="addProduct()">
+    <input formControlName="title" placeholder="Title" />
+    <input formControlName="description" placeholder="Description" />
+    <button type="submit">Add Product</button>
+  </form>
+  <ul>
+    <li *ngFor="let product of products; let i = index">
+      {{ product.title }} - {{ product.description }}
+      <button (click)="deleteProduct(i)">Delete</button>
+    </li>
+  </ul>
+
+  <h2>Team Achievements</h2>
+  <form [formGroup]="achievementForm" (ngSubmit)="addAchievement()">
+    <input formControlName="title" placeholder="Title" />
+    <input formControlName="date" placeholder="Date" />
+    <input formControlName="description" placeholder="Description" />
+    <button type="submit">Add Achievement</button>
+  </form>
+  <ul>
+    <li *ngFor="let achievement of teamAchievements; let i = index">
+      {{ achievement.title }} - {{ achievement.date }} - {{ achievement.description }}
+      <button (click)="deleteAchievement(i)">Delete</button>
+    </li>
+  </ul>
+
+  <h2>Access Roles</h2>
+  <form [formGroup]="accessForm" (ngSubmit)="addAccessRole()">
+    <input formControlName="roleName" placeholder="Role Name" />
+    <input formControlName="roleDescription" placeholder="Role Description" />
+    <input formControlName="product" placeholder="Product" />
+    <input formControlName="howToGetIt" placeholder="How to Get It" />
+    <button type="submit">Add Role</button>
+  </form>
+  <ul>
+    <li *ngFor="let access of accessRoles; let i = index">
+      {{ access.roleName }} - {{ access.roleDescription }} - {{ access.product }} - {{ access.howToGetIt }}
+      <button (click)="deleteAccessRole(i)">Delete</button>
+    </li>
+  </ul>
+</div>
+
+
+
+export class CrudComponent implements OnInit {
+  // Other code...
+
+  editTeamIndex: number | null = null; // Track the index of the team being edited
+  editProductIndex: number | null = null;
+  editAchievementIndex: number | null = null;
+  editAccessIndex: number | null = null;
+
+  ngOnInit(): void {
+    // Initialization as before
+  }
+
+  // TEAM CRUD Operations
+  addOrUpdateTeam() {
+    if (this.editTeamIndex !== null) {
+      // Update existing team
+      this.teams[this.editTeamIndex] = this.teamForm.value;
+      this.editTeamIndex = null; // Reset after update
+    } else {
+      // Add new team
+      this.teams.push(this.teamForm.value);
+    }
+    this.dataService.updateTeams(this.teams);
+    this.teamForm.reset();
+  }
+
+  editTeam(index: number) {
+    this.editTeamIndex = index;
+    const team = this.teams[index];
+    this.teamForm.setValue({
+      email: team.email,
+      title: team.title,
+      skills: team.skills,
+      joined: team.joined,
+    });
+  }
+
+  // Similar for Products
+  addOrUpdateProduct() {
+    if (this.editProductIndex !== null) {
+      this.products[this.editProductIndex] = this.productForm.value;
+      this.editProductIndex = null;
+    } else {
+      this.products.push(this.productForm.value);
+    }
+    this.dataService.updateProducts(this.products);
+    this.productForm.reset();
+  }
+
+  editProduct(index: number) {
+    this.editProductIndex = index;
+    const product = this.products[index];
+    this.productForm.setValue({
+      title: product.title,
+      description: product.description,
+    });
+  }
+
+  // Similar for Team Achievements
+  addOrUpdateAchievement() {
+    if (this.editAchievementIndex !== null) {
+      this.teamAchievements[this.editAchievementIndex] = this.achievementForm.value;
+      this.editAchievementIndex = null;
+    } else {
+      this.teamAchievements.push(this.achievementForm.value);
+    }
+    this.dataService.updateTeamAchievements(this.teamAchievements);
+    this.achievementForm.reset();
+  }
+
+  editAchievement(index: number) {
+    this.editAchievementIndex = index;
+    const achievement = this.teamAchievements[index];
+    this.achievementForm.setValue({
+      title: achievement.title,
+      date: achievement.date,
+      description: achievement.description,
+    });
+  }
+
+  // Similar for Access Roles
+  addOrUpdateAccessRole() {
+    if (this.editAccessIndex !== null) {
+      this.accessRoles[this.editAccessIndex] = this.accessForm.value;
+      this.editAccessIndex = null;
+    } else {
+      this.accessRoles.push(this.accessForm.value);
+    }
+    this.dataService.updateAccessRoles(this.accessRoles);
+    this.accessForm.reset();
+  }
+
+  editAccessRole(index: number) {
+    this.editAccessIndex = index;
+    const access = this.accessRoles[index];
+    this.accessForm.setValue({
+      roleName: access.roleName,
+      roleDescription: access.roleDescription,
+      product: access.product,
+      howToGetIt: access.howToGetIt,
+    });
+  }
+}
+
+
+<h2>Teams</h2>
+<form [formGroup]="teamForm" (ngSubmit)="addOrUpdateTeam()">
+  <input formControlName="email" placeholder="Email" />
+  <input formControlName="title" placeholder="Title" />
+  <input formControlName="skills" placeholder="Skills" />
+  <input formControlName="joined" placeholder="Joined" />
+  <button type="submit">
+    {{ editTeamIndex !== null ? 'Update Team' : 'Add Team' }}
+  </button>
+</form>
+<ul>
+  <li *ngFor="let team of teams; let i = index">
+    {{ team.email }} - {{ team.title }} - {{ team.skills }} - {{ team.joined }}
+    <button (click)="editTeam(i)">Edit</button>
+    <button (click)="deleteTeam(i)">Delete</button>
+  </li>
+</ul>
