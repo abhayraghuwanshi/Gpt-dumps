@@ -1,0 +1,205 @@
+Below is the implementation of a CRUD operation for your given payload using Java 21, Spring Boot 3.3.6, and Jakarta. It includes the database table creation SQL, the entity, repository, service, and controller.
+
+1. Database Table Creation SQL
+
+CREATE TABLE team_dependencies (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    source_team VARCHAR(255) NOT NULL,
+    dependency_type VARCHAR(255) NOT NULL,
+    target_team VARCHAR(255) NOT NULL
+);
+
+2. Entity
+
+package com.example.teamdependencies.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "team_dependencies")
+public class TeamDependency {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "source_team", nullable = false)
+    private String sourceTeam;
+
+    @Column(name = "dependency_type", nullable = false)
+    private String dependencyType;
+
+    @Column(name = "target_team", nullable = false)
+    private String targetTeam;
+
+    // Getters and Setters
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getSourceTeam() {
+        return sourceTeam;
+    }
+
+    public void setSourceTeam(String sourceTeam) {
+        this.sourceTeam = sourceTeam;
+    }
+
+    public String getDependencyType() {
+        return dependencyType;
+    }
+
+    public void setDependencyType(String dependencyType) {
+        this.dependencyType = dependencyType;
+    }
+
+    public String getTargetTeam() {
+        return targetTeam;
+    }
+
+    public void setTargetTeam(String targetTeam) {
+        this.targetTeam = targetTeam;
+    }
+}
+
+3. Repository
+
+package com.example.teamdependencies.repository;
+
+import com.example.teamdependencies.entity.TeamDependency;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface TeamDependencyRepository extends JpaRepository<TeamDependency, Long> {
+}
+
+4. Service
+
+package com.example.teamdependencies.service;
+
+import com.example.teamdependencies.entity.TeamDependency;
+import com.example.teamdependencies.repository.TeamDependencyRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class TeamDependencyService {
+
+    @Autowired
+    private TeamDependencyRepository repository;
+
+    public List<TeamDependency> getAllDependencies() {
+        return repository.findAll();
+    }
+
+    public TeamDependency getDependencyById(Long id) {
+        return repository.findById(id).orElseThrow(() -> new RuntimeException("Dependency not found"));
+    }
+
+    public TeamDependency createDependency(TeamDependency teamDependency) {
+        return repository.save(teamDependency);
+    }
+
+    public TeamDependency updateDependency(Long id, TeamDependency updatedDependency) {
+        TeamDependency existingDependency = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Dependency not found"));
+        
+        existingDependency.setSourceTeam(updatedDependency.getSourceTeam());
+        existingDependency.setDependencyType(updatedDependency.getDependencyType());
+        existingDependency.setTargetTeam(updatedDependency.getTargetTeam());
+        
+        return repository.save(existingDependency);
+    }
+
+    public void deleteDependency(Long id) {
+        repository.deleteById(id);
+    }
+}
+
+5. Controller
+
+package com.example.teamdependencies.controller;
+
+import com.example.teamdependencies.entity.TeamDependency;
+import com.example.teamdependencies.service.TeamDependencyService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/team-dependencies")
+public class TeamDependencyController {
+
+    @Autowired
+    private TeamDependencyService service;
+
+    @GetMapping
+    public ResponseEntity<List<TeamDependency>> getAllDependencies() {
+        return ResponseEntity.ok(service.getAllDependencies());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<TeamDependency> getDependencyById(@PathVariable Long id) {
+        return ResponseEntity.ok(service.getDependencyById(id));
+    }
+
+    @PostMapping
+    public ResponseEntity<TeamDependency> createDependency(@RequestBody TeamDependency teamDependency) {
+        return ResponseEntity.ok(service.createDependency(teamDependency));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<TeamDependency> updateDependency(@PathVariable Long id, @RequestBody TeamDependency updatedDependency) {
+        return ResponseEntity.ok(service.updateDependency(id, updatedDependency));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteDependency(@PathVariable Long id) {
+        service.deleteDependency(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+
+6. Application Properties
+
+Configure your database in the application.properties or application.yml file.
+
+application.properties
+
+spring.datasource.url=jdbc:mysql://localhost:3306/your_database
+spring.datasource.username=your_username
+spring.datasource.password=your_password
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+
+7. Testing the API
+
+You can test the API using tools like Postman or curl.
+	•	GET /api/v1/team-dependencies - Retrieve all dependencies.
+	•	GET /api/v1/team-dependencies/{id} - Retrieve a dependency by ID.
+	•	POST /api/v1/team-dependencies - Create a new dependency with the following JSON payload:
+
+{
+  "sourceTeam": "Team A",
+  "dependencyType": "Type 1",
+  "targetTeam": "Team B"
+}
+
+
+	•	PUT /api/v1/team-dependencies/{id} - Update an existing dependency by ID.
+	•	DELETE /api/v1/team-dependencies/{id} - Delete a dependency by ID.
+
+Key Features
+
+	•	Spring Boot 3.3.6 with Jakarta provides seamless integration for modern Java applications.
+	•	The CRUD operations use JPA for database interaction.
+	•	Easily extendable for additional business logic.
