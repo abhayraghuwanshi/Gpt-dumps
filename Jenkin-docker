@@ -192,5 +192,83 @@ pipeline {
     }
 }
 
+pipeline {
+    agent none // Use dynamic Kubernetes pod
+
+    parameters {
+        string(name: 'IMAGE_NAME', defaultValue: 'your-registry/your-image:latest', description: 'Docker image name to push')
+        file(name: 'DOCKERFILE_UPLOAD', description: 'Upload Dockerfile to build the image')
+        string(name: 'CONTEXT_PATH', defaultValue: '.', description: 'Docker build context (relative to workspace)')
+    }
+
+    environment {
+        DOCKER_CONFIG = '/kaniko/.docker/' // Kaniko requires Docker credentials here
+    }
+
+    stages {
+        stage('Build and Push Image with Kaniko') {
+            agent {
+                kubernetes {
+                    yaml """
+                    apiVersion: v1
+                    kind: Pod
+                    spec:
+                      containers:
+                      - name: kaniko
+                        image: gcr.io/kaniko-project/executor:latest
+                        command:
+                        - /busybox/cat
+                        tty: true
+                        volumeMounts:
+                        - name: docker-config
+                          mountPath: /kaniko/.docker
+                      volumes:
+                        - name: docker-config
+                          emptyDir: {}
+                    """
+                }
+            }
+
+            steps {
+                script {
+                    echo "📂 Preparing Docker credentials"
+
+                    // Bind Docker credentials securely from Jenkins
+                    withCredentials([file(credentialsId: 'docker-config', variable: 'DOCKER_CONFIG_FILE')]) {
+                        sh '''
+                        mkdir -p /kaniko/.docker
+                        cp $DOCKER_CONFIG_FILE /kaniko/.docker/config.json
+                        '''
+                    }
+
+                    echo "📝 Saving uploaded Dockerfile"
+                    sh '''
+                    # Ensure the workspace is clean
+                    rm -rf kaniko-build && mkdir kaniko-build
+                    cp "${DOCKERFILE_UPLOAD}" kaniko-build/Dockerfile
+                    '''
+
+                    echo "🏗️  Building Docker image using Kaniko..."
+                    sh """
+                    /kaniko/executor \
+                      --dockerfile=kaniko-build/Dockerfile \      # Use uploaded Dockerfile
+                      --context=${WORKSPACE}/${CONTEXT_PATH} \    # Build context (workspace)
+                      --destination=${IMAGE_NAME} \               # Image to push
+                      --cache=true                                # Enable caching for faster builds
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Docker image successfully built and pushed: ${IMAGE_NAME}"
+        }
+        failure {
+            echo "❌ Build failed. Check logs for more details."
+        }
+    }
+}
 
 
