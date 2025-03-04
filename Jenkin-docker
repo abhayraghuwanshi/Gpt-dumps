@@ -346,4 +346,116 @@ pipeline {
             echo "❌ Build failed. Check logs for details."
         }
     }
+}r
+
+
+podTemplate(
+    label: 'kaniko-builder',
+    containers: [
+        containerTemplate(
+            name: 'kaniko',
+            image: 'gcr.io/kaniko-project/executor:latest',
+            command: 'cat',
+            ttyEnabled: true,
+            resourceRequestCpu: '500m',
+            resourceRequestMemory: '1Gi',
+            volumeMounts: [
+                [mountPath: '/kaniko/.docker', name: 'docker-config']
+            ]
+        )
+    ],
+    volumes: [
+        emptyDirVolume(mountPath: '/kaniko/.docker', name: 'docker-config')
+    ]
+) {
+    node('kaniko-builder') {
+        parameters {
+            file(name: 'DOCKERFILE', description: 'Upload your Dockerfile')
+            string(name: 'REGISTRY', defaultValue: 'docker.io', description: 'Target container registry (e.g., docker.io)')
+            string(name: 'IMAGE_NAME', defaultValue: '', description: 'Image name')
+            string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Image tag')
+        }
+
+        stages {
+            stage('Validate Inputs') {
+                steps {
+                    script {
+                        if (!params.DOCKERFILE) {
+                            error "Dockerfile is required"
+                        }
+                        if (!params.IMAGE_NAME) {
+                            error "Image name is required"
+                        }
+                        if (!params.REGISTRY) {
+                            error "Registry is required"
+                        }
+                    }
+                }
+            }
+
+            stage('Prepare Dockerfile') {
+                steps {
+                    script {
+                        // Rename the uploaded Dockerfile
+                        sh "mv ${params.DOCKERFILE} Dockerfile"
+                    }
+                }
+            }
+
+            stage('Build and Push Image') {
+                steps {
+                    container('kaniko') {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'docker-registry-creds', // Replace with your actual credential ID
+                            usernameVariable: 'REGISTRY_USERNAME',
+                            passwordVariable: 'REGISTRY_PASSWORD'
+                        )]) {
+                            script {
+                                // Create Docker config JSON with Jenkins credentials
+                                def dockerConfig = """
+                                {
+                                    "auths": {
+                                        "${params.REGISTRY}": {
+                                            "username": "${REGISTRY_USERNAME}",
+                                            "password": "${REGISTRY_PASSWORD}",
+                                            "auth": "${"${REGISTRY_USERNAME}:${REGISTRY_PASSWORD}".bytes.encodeBase64().toString()}"
+                                        }
+                                    }
+                                }
+                                """
+                                // Write config to Kaniko's expected location
+                                writeFile file: '/kaniko/.docker/config.json', text: dockerConfig
+
+                                // Construct the destination
+                                def destination = "${params.REGISTRY}/${params.IMAGE_NAME}:${params.IMAGE_TAG}"
+
+                                // Build and push with Kaniko
+                                sh """
+                                    /kaniko/executor \
+                                    --dockerfile=Dockerfile \
+                                    --context=. \
+                                    --destination=${destination} \
+                                    --cache=true \
+                                    --cache-ttl=168h
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        post {
+            success {
+                echo "Image successfully built and pushed to ${params.REGISTRY}/${params.IMAGE_NAME}:${params.IMAGE_TAG}"
+            }
+            failure {
+                echo "Pipeline failed"
+            }
+            always {
+                cleanWs() // Clean workspace after build
+            }
+        }
+    }
 }
+​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
