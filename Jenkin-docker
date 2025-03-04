@@ -47,3 +47,76 @@ pipeline {
         }
     }
 }
+
+
+
+
+
+pipeline {
+    agent {
+        docker {
+            image 'gcr.io/kaniko-project/executor:latest'
+            args '--user root' // Allow root-level access in Kaniko
+        }
+    }
+    parameters {
+        file(name: 'UPLOAD_FILE', description: 'Upload Dockerfile or build context (e.g., .tar.gz)') // Input file
+        string(name: 'IMAGE_NAME', defaultValue: 'your-registry/your-image:latest', description: 'Target Docker image')
+    }
+    environment {
+        DOCKER_CONFIG = '/kaniko/.docker/' // Path Kaniko reads Docker credentials from
+    }
+    stages {
+        stage('Prepare Docker Context') {
+            steps {
+                script {
+                    echo "📂 Uploaded File: ${UPLOAD_FILE}"
+                    sh '''
+                    mkdir -p ${WORKSPACE}/build-context
+                    cp ${UPLOAD_FILE} ${WORKSPACE}/build-context/
+                    '''
+                    
+                    // Extract if it's a tarball
+                    if (UPLOAD_FILE.endsWith('.tar.gz')) {
+                        sh 'tar -xzf ${WORKSPACE}/build-context/${UPLOAD_FILE} -C ${WORKSPACE}/build-context/'
+                    }
+                }
+            }
+        }
+
+        stage('Setup Docker Credentials') {
+            steps {
+                script {
+                    withCredentials([file(credentialsId: 'docker-config', variable: 'DOCKER_CONFIG_FILE')]) {
+                        sh '''
+                        mkdir -p /kaniko/.docker
+                        cp $DOCKER_CONFIG_FILE /kaniko/.docker/config.json
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build and Push Image') {
+            steps {
+                script {
+                    sh '''
+                    /kaniko/executor \
+                      --dockerfile=${WORKSPACE}/build-context/Dockerfile \
+                      --context=${WORKSPACE}/build-context \
+                      --destination=${IMAGE_NAME} \
+                      --cache=true
+                    '''
+                }
+            }
+        }
+    }
+    post {
+        success {
+            echo "✅ Docker image successfully built and pushed: ${IMAGE_NAME}"
+        }
+        failure {
+            echo "❌ Build failed. Check logs for details."
+        }
+    }
+}
