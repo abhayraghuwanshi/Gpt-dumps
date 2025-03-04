@@ -1,0 +1,49 @@
+pipeline {
+    agent {
+        docker {
+            image 'gcr.io/kaniko-project/executor:latest'
+            args '--user root' // Ensure permissions to access workspace
+        }
+    }
+    environment {
+        IMAGE_NAME = 'your-registry/your-image-name:latest' // Replace with your image
+        DOCKER_CONFIG = '/kaniko/.docker/'                  // Kaniko expects this path
+    }
+    stages {
+        stage('Setup Docker Credentials') {
+            steps {
+                script {
+                    // Write the dockerconfig.json from Jenkins credentials
+                    withCredentials([file(credentialsId: 'docker-config', variable: 'DOCKER_CONFIG_FILE')]) {
+                        sh '''
+                        mkdir -p /kaniko/.docker
+                        cp $DOCKER_CONFIG_FILE /kaniko/.docker/config.json
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build and Push Image') {
+            steps {
+                script {
+                    sh '''#!/bin/sh
+                    /kaniko/executor \
+                      --dockerfile=Dockerfile \
+                      --context=${WORKSPACE} \
+                      --destination=${IMAGE_NAME} \
+                      --cache=true
+                    '''
+                }
+            }
+        }
+    }
+    post {
+        success {
+            echo "Image successfully built and pushed: ${IMAGE_NAME}"
+        }
+        failure {
+            echo "Build failed. Check logs for errors."
+        }
+    }
+}
