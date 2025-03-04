@@ -120,3 +120,77 @@ pipeline {
         }
     }
 }
+
+pipeline {
+    agent none // We use a Kubernetes pod dynamically
+
+    environment {
+        IMAGE_NAME = 'your-registry/your-image:latest' // Destination image
+        DOCKER_CONFIG = '/kaniko/.docker/' // Kaniko expects credentials here
+    }
+
+    stages {
+        stage('Build and Push Image with Kaniko') {
+            agent {
+                kubernetes {
+                    yaml """
+                    apiVersion: v1
+                    kind: Pod
+                    spec:
+                      containers:
+                      - name: kaniko
+                        image: gcr.io/kaniko-project/executor:latest
+                        command:
+                        - /busybox/cat
+                        tty: true
+                        volumeMounts:
+                        - name: docker-config
+                          mountPath: /kaniko/.docker
+                      volumes:
+                        - name: docker-config
+                          emptyDir: {}
+                    """
+                }
+            }
+
+            steps {
+                script {
+                    echo "📂 Preparing Docker credentials"
+
+                    // Use Jenkins credential binding to securely access Docker credentials
+                    withCredentials([file(credentialsId: 'docker-config', variable: 'DOCKER_CONFIG_FILE')]) {
+                        sh '''
+                        # Create Docker config directory if not exists
+                        mkdir -p /kaniko/.docker
+
+                        # Copy Jenkins docker config to Kaniko's expected location
+                        cp $DOCKER_CONFIG_FILE /kaniko/.docker/config.json
+                        '''
+                    }
+
+                    echo "🏗️  Building Docker image using Kaniko..."
+
+                    sh '''
+                    /kaniko/executor \
+                      --dockerfile=Dockerfile \         # Dockerfile location
+                      --context=${WORKSPACE} \          # Build context (workspace)
+                      --destination=${IMAGE_NAME} \     # Image to push
+                      --cache=true                      # Enable caching for faster builds
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Docker image successfully built and pushed: ${IMAGE_NAME}"
+        }
+        failure {
+            echo "❌ Build failed. Check logs for more details."
+        }
+    }
+}
+
+
+
