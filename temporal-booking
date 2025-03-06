@@ -1,0 +1,206 @@
+Below is a summary solution that meets your two requirements:
+
+1. **A Controller to Update a Running Workflow:**  
+   This controller exposes an endpoint to signal the running workflow with a new target time. When the workflow receives this signal, it cancels its current timer and recalculates its wait duration.
+
+2. **Separate Booking Task Queue:**  
+   The booking workflow runs on its own dedicated task queue (e.g., `"booking-task-queue"`) so that booking operations are isolated from the transaction-collecting or scheduler workflows. This decoupling ensures that long-running booking tasks or updates to booking logic won’t interfere with other parts of your system.
+
+---
+
+## 1. Controller to Update the Workflow
+
+### Workflow Interface
+```java
+@WorkflowInterface
+public interface MyWorkflow {
+    @WorkflowMethod
+    void startWorkflow();
+
+    @SignalMethod
+    void updateSendTime(Instant newTargetTime);
+}
+```
+
+### Workflow Implementation (Simplified)
+```java
+public class MyWorkflowImpl implements MyWorkflow {
+    private Instant targetTime;
+    private CancellationScope timerScope;
+
+    @Override
+    public void startWorkflow() {
+        // Initially set target time (e.g., 1st day)
+        targetTime = calculateTargetTimeForFirst();
+        waitUntilTargetTime();
+        sendMessage();
+    }
+
+    @Override
+    public void updateSendTime(Instant newTargetTime) {
+        targetTime = newTargetTime;
+        if (timerScope != null && !timerScope.isCancelled()) {
+            timerScope.cancel("Target time updated");
+        }
+    }
+
+    private void waitUntilTargetTime() {
+        timerScope = Workflow.newCancellationScope(() -> {
+            long delayMillis = Math.max(0, targetTime.toEpochMilli() - Workflow.currentTimeMillis());
+            Workflow.sleep(Duration.ofMillis(delayMillis));
+        });
+        timerScope.run();
+    }
+
+    private Instant calculateTargetTimeForFirst() {
+        // Example: Calculate the first day at 9 AM UTC (simplified)
+        Instant now = Instant.ofEpochMilli(Workflow.currentTimeMillis());
+        return now.plus(Duration.ofDays(1));
+    }
+
+    private void sendMessage() {
+        Workflow.getLogger(MyWorkflowImpl.class).info("Message sent at: " + targetTime);
+    }
+}
+```
+
+### Spring Boot Controller
+```java
+package com.example.temporal.controller;
+
+import io.temporal.client.WorkflowClient;
+import com.example.temporal.workflow.MyWorkflow;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.Instant;
+
+@RestController
+@RequestMapping("/api/workflow")
+public class WorkflowController {
+
+    private final WorkflowClient workflowClient;
+
+    @Autowired
+    public WorkflowController(WorkflowClient workflowClient) {
+        this.workflowClient = workflowClient;
+    }
+
+    /**
+     * Endpoint to update the wait time of a running workflow.
+     * @param workflowId The ID of the workflow to update.
+     * @param newTargetTime The new target time in ISO-8601 format (e.g., "2025-03-02T09:00:00Z").
+     * @return Response message indicating the update status.
+     */
+    @PostMapping("/update-wait-time")
+    public ResponseEntity<String> updateWaitTime(
+            @RequestParam String workflowId,
+            @RequestParam String newTargetTime) {
+        Instant targetInstant;
+        try {
+            targetInstant = Instant.parse(newTargetTime);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Invalid time format. Please use ISO-8601 format.");
+        }
+
+        // Create a workflow stub using the workflow ID to signal the running workflow.
+        MyWorkflow workflow = workflowClient.newWorkflowStub(MyWorkflow.class, workflowId);
+        workflow.updateSendTime(targetInstant);
+
+        return ResponseEntity.ok("Workflow " + workflowId + " wait time updated to " + targetInstant);
+    }
+}
+```
+
+---
+
+## 2. Separate Booking Task Queue
+
+### Booking Workflow Interface
+```java
+@WorkflowInterface
+public interface BookingWorkflow {
+    @WorkflowMethod
+    void bookDueTransactions();
+}
+```
+
+### Booking Workflow Implementation
+```java
+public class BookingWorkflowImpl implements BookingWorkflow {
+    @Override
+    public void bookDueTransactions() {
+        // Create an activity stub for booking, running on a dedicated booking task queue.
+        BookingActivities bookingActivities = Workflow.newActivityStub(
+            BookingActivities.class,
+            ActivityOptions.newBuilder()
+                .setStartToCloseTimeout(Duration.ofSeconds(10))
+                .build()
+        );
+        
+        // Retrieve transactions to book from a durable store or similar mechanism.
+        List<String> transactions = getTransactionsToBook();
+        if (!transactions.isEmpty()) {
+            bookingActivities.book(transactions);
+        } else {
+            Workflow.getLogger(BookingWorkflowImpl.class).info("No transactions to book.");
+        }
+    }
+    
+    private List<String> getTransactionsToBook() {
+        // Replace with your transaction retrieval logic.
+        return new ArrayList<>();
+    }
+}
+```
+
+### Booking Activities Interface & Implementation
+```java
+@ActivityInterface
+public interface BookingActivities {
+    @ActivityMethod
+    void book(List<String> transactions);
+}
+
+public class BookingActivitiesImpl implements BookingActivities {
+    @Override
+    public void book(List<String> transactions) {
+        System.out.println("Booking transactions: " + transactions);
+    }
+}
+```
+
+### Worker Registration with Separate Task Queues
+```java
+public class WorkerStarter {
+    public static void main(String[] args) {
+        WorkflowServiceStubs service = WorkflowServiceStubs.newInstance();
+        WorkflowClient client = WorkflowClient.newInstance(service);
+        WorkerFactory factory = WorkerFactory.newInstance(client);
+
+        // Worker for the primary workflow (e.g., on "primary-task-queue")
+        Worker primaryWorker = factory.newWorker("primary-task-queue");
+        primaryWorker.registerWorkflowImplementationTypes(MyWorkflowImpl.class);
+
+        // Worker for the booking workflow on a dedicated booking task queue.
+        Worker bookingWorker = factory.newWorker("booking-task-queue");
+        bookingWorker.registerWorkflowImplementationTypes(BookingWorkflowImpl.class);
+        bookingWorker.registerActivitiesImplementations(new BookingActivitiesImpl());
+
+        factory.start();
+    }
+}
+```
+
+---
+
+### Summary
+
+- **Controller to Update Workflow:**  
+  The provided Spring Boot controller exposes an endpoint (`/api/workflow/update-wait-time`) that accepts a workflow ID and a new target time (in ISO-8601 format). It signals the running workflow to update its wait time.
+
+- **Separate Booking Task Queue:**  
+  A dedicated booking workflow runs on its own task queue (`"booking-task-queue"`). This workflow triggers booking activities (e.g., processing batch transactions) independently from other workflows, making your system more modular and maintainable.
+
+This setup lets you update a workflow’s schedule dynamically while isolating the booking process on a dedicated task queue. Let me know if you need further details or adjustments!
