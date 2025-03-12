@@ -1,0 +1,81 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-server
+  namespace: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-server
+  template:
+    metadata:
+      labels:
+        app: temporal-server
+    spec:
+      containers:
+        - name: temporal-server
+          image: myRegistry.azurecr.io/temporal-server:latest
+          ports:
+            - containerPort: 7233  # Default Temporal server port
+      imagePullSecrets:
+        - name: myRegistryKey
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  namespace: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-ui
+  template:
+    metadata:
+      labels:
+        app: temporal-ui
+    spec:
+      containers:
+        - name: temporal-ui
+          image: myRegistry.azurecr.io/temporal-ui:latest
+          ports:
+            - containerPort: 8080  # Adjust based on your UI configuration
+      imagePullSecrets:
+        - name: myRegistryKey
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-ui
+  namespace: temporal
+spec:
+  selector:
+    app: temporal-ui
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-admintools
+  namespace: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-admintools
+  template:
+    metadata:
+      labels:
+        app: temporal-admintools
+    spec:
+      containers:
+        - name: temporal-admintools
+          image: myRegistry.azurecr.io/temporal-admintools:latest
+          # The admintools container may require a specific command; add "command" and "args" if needed.
+      imagePullSecrets:
+        - name: myRegistryKey
