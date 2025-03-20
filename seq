@@ -1,0 +1,29 @@
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.id.IdentifierGenerator;
+
+import java.io.Serializable;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
+public class CustomInvoiceIdGenerator implements IdentifierGenerator {
+
+    @Override
+    public Serializable generate(SharedSessionContractImplementor session, Object object) {
+        // Get the next sequence value using native query
+        Long sequenceValue = ((Number) session.createNativeQuery("SELECT nextval('t_invoice_pib_sequence')")
+                .getSingleResult()).longValue();
+
+        // Apply custom logic
+        String prefix = "INV";
+        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String sequencePart = String.format("%06d", sequenceValue); // Zero-padded to 6 digits
+
+        return String.format("%s-%s-%s", prefix, datePart, sequencePart);
+    }
+}
+
+
+  @Id
+    @GeneratedValue(generator = "custom-invoice-id")
+    @GenericGenerator(name = "custom-invoice-id", type = CustomInvoiceIdGenerator.class)
+    private String customId;
