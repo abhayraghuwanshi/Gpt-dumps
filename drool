@@ -1,0 +1,242 @@
+To apply VAT calculation formulas using **Drools** with rules stored in **AWS S3** and avoid redeployment, follow these steps.
+
+---
+
+## ✅ **Prerequisites**
+1. Java with Spring Boot
+2. Drools (`kie-api`, `drools-core`, `drools-compiler`)
+3. AWS SDK for Java (`aws-java-sdk-s3`)
+
+Add these dependencies to your `pom.xml`:
+```xml
+<dependency>
+  <groupId>org.kie</groupId>
+  <artifactId>kie-api</artifactId>
+  <version>8.44.0.Final</version>
+</dependency>
+
+<dependency>
+  <groupId>org.kie</groupId>
+  <artifactId>drools-core</artifactId>
+  <version>8.44.0.Final</version>
+</dependency>
+
+<dependency>
+  <groupId>org.kie</groupId>
+  <artifactId>drools-compiler</artifactId>
+  <version>8.44.0.Final</version>
+</dependency>
+
+<dependency>
+  <groupId>software.amazon.awssdk</groupId>
+  <artifactId>s3</artifactId>
+  <version>2.25.0</version>
+</dependency>
+```
+
+---
+
+## ✅ **Step 1: Sample VAT Calculation Rule in S3**
+Create a `.drl` file (e.g., `vat-rules.drl`) and upload it to your S3 bucket.
+
+### **Sample Rule**
+```java
+import com.example.VatCalculationRequest;
+
+rule "Standard VAT Calculation"
+when
+    $request : VatCalculationRequest(type == "STANDARD")
+then
+    double vat = $request.getAmount() * $request.getVatRate() / 100;
+    System.out.println("Standard VAT Calculated: " + vat);
+end
+
+rule "Inclusive VAT Calculation"
+when
+    $request : VatCalculationRequest(type == "INCLUSIVE")
+then
+    double vat = $request.getAmount() - (request.getAmount() / (1 + $request.getVatRate() / 100));
+    System.out.println("Inclusive VAT Calculated: " + vat);
+end
+```
+
+---
+
+## ✅ **Step 2: VAT Calculation Request Model**
+```java
+public class VatCalculationRequest {
+    private String type; // STANDARD or INCLUSIVE
+    private double amount;
+    private double vatRate;
+
+    public VatCalculationRequest(String type, double amount, double vatRate) {
+        this.type = type;
+        this.amount = amount;
+        this.vatRate = vatRate;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public double getAmount() {
+        return amount;
+    }
+
+    public double getVatRate() {
+        return vatRate;
+    }
+}
+```
+
+---
+
+## ✅ **Step 3: S3 Client Setup**
+```java
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
+
+import java.nio.charset.StandardCharsets;
+
+public class S3RuleLoader {
+
+    private final S3Client s3Client;
+    private final String bucketName;
+    private final String ruleFileKey;
+
+    public S3RuleLoader(String bucketName, String ruleFileKey) {
+        this.s3Client = S3Client.create();
+        this.bucketName = bucketName;
+        this.ruleFileKey = ruleFileKey;
+    }
+
+    public String loadRulesFromS3() {
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(ruleFileKey)
+                    .build();
+            ResponseBytes<?> response = s3Client.getObjectAsBytes(getObjectRequest);
+            return response.asUtf8String();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load rules from S3", e);
+        }
+    }
+}
+```
+
+---
+
+## ✅ **Step 4: Drools Engine Setup**
+```java
+import org.kie.api.KieServices;
+import org.kie.api.builder.KieBuilder;
+import org.kie.api.builder.KieFileSystem;
+import org.kie.api.runtime.KieContainer;
+import org.kie.api.runtime.KieSession;
+
+public class DroolsService {
+
+    private KieContainer kieContainer;
+    private final S3RuleLoader ruleLoader;
+
+    public DroolsService(S3RuleLoader ruleLoader) {
+        this.ruleLoader = ruleLoader;
+        loadRules();
+    }
+
+    public void loadRules() {
+        try {
+            String drlContent = ruleLoader.loadRulesFromS3();
+            KieServices ks = KieServices.Factory.get();
+            KieFileSystem kfs = ks.newKieFileSystem();
+            kfs.write("src/main/resources/vat-rules.drl", drlContent);
+            
+            KieBuilder kb = ks.newKieBuilder(kfs);
+            kb.buildAll();
+            if (kb.getResults().hasMessages(org.kie.api.builder.Message.Level.ERROR)) {
+                throw new IllegalStateException("Error in Drools rules: " + kb.getResults().toString());
+            }
+            
+            this.kieContainer = ks.newKieContainer(ks.getRepository().getDefaultReleaseId());
+            System.out.println("Rules loaded from S3");
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load and compile rules", e);
+        }
+    }
+
+    public void calculateVat(VatCalculationRequest request) {
+        KieSession kieSession = kieContainer.newKieSession();
+        kieSession.insert(request);
+        kieSession.fireAllRules();
+        kieSession.dispose();
+    }
+}
+```
+
+---
+
+## ✅ **Step 5: API Controller**
+```java
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/vat")
+public class VatController {
+
+    private final DroolsService droolsService;
+
+    public VatController(DroolsService droolsService) {
+        this.droolsService = droolsService;
+    }
+
+    @PostMapping("/calculate")
+    public String calculateVat(@RequestBody VatCalculationRequest request) {
+        droolsService.calculateVat(request);
+        return "VAT calculation completed.";
+    }
+
+    @PostMapping("/reload")
+    public String reloadRules() {
+        droolsService.loadRules();
+        return "Rules reloaded successfully!";
+    }
+}
+```
+
+---
+
+## ✅ **How to Test**
+1. Start your Spring Boot application.  
+2. Upload `vat-rules.drl` to your S3 bucket.  
+3. Trigger the API using Postman:  
+
+- **Calculate VAT**  
+```http
+POST http://localhost:8080/vat/calculate
+Content-Type: application/json
+
+{
+  "type": "STANDARD",
+  "amount": 1000,
+  "vatRate": 18
+}
+```
+
+- **Reload Rules Without Restarting**  
+```http
+POST http://localhost:8080/vat/reload
+```
+
+---
+
+## ✅ **Explanation**
+1. **No Redeployment Required:** Any changes in the `.drl` file on S3 will be applied by calling the `/reload` endpoint.  
+2. **Multiple Rule Management:** Supports adding different VAT calculation rules.  
+3. **Error Handling:** If the rules are invalid, Drools will throw a compilation error, preventing incorrect rules from being applied.  
+
+---
+
+Let me know if you'd like additional features like logging, monitoring, or error handling!
