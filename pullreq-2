@@ -107,3 +107,30 @@ jobs:
               issue_number: ${{ inputs.pr_number }},
               body: '✅ Build completed successfully in DevOps repository!'
             });
+
+
+
+
+- name: Generate Detailed Report
+  run: |
+    # Generate HTML or Markdown report
+    echo "<h1>Build Report</h1>..." > build-report.html
+
+- name: Upload Report as Artifact
+  uses: actions/upload-artifact@v3
+  with:
+    name: build-report
+    path: build-report.html
+
+- name: Comment with Artifact Link
+  uses: actions/github-script@v6
+  with:
+    github-token: ${{ secrets.GITHUB_PAT }}
+    script: |
+      const [owner, repo] = '${{ inputs.service_repo }}'.split('/');
+      await github.rest.issues.createComment({
+        owner: owner,
+        repo: repo,
+        issue_number: ${{ inputs.pr_number }},
+        body: `Build completed. [View detailed report](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`
+      });
