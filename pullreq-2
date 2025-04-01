@@ -1,0 +1,109 @@
+name: Trigger DevOps Build on PR
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  trigger-devops-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger workflow in DevOps repository
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.DEVOPS_PAT }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'your-org',
+              repo: 'devops-repo',
+              workflow_id: 'service-pr-build.yml',
+              ref: 'main',
+              inputs: {
+                service_repo: '${{ github.repository }}',
+                service_branch: '${{ github.head_ref }}',
+                commit_sha: '${{ github.event.pull_request.head.sha }}',
+                pr_number: '${{ github.event.pull_request.number }}',
+                service_name: 'service-a'  // This could be dynamically set
+              }
+            })
+            
+
+
+name: Build Service PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      service_repo:
+        description: 'Source repository'
+        required: true
+        type: string
+      service_branch:
+        description: 'Branch name'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Commit SHA'
+        required: true
+        type: string
+      pr_number:
+        description: 'PR Number'
+        required: true
+        type: string
+      service_name:
+        description: 'Service name'
+        required: true
+        type: string
+
+jobs:
+  build-service-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout DevOps Repository
+        uses: actions/checkout@v3
+        with:
+          path: devops
+          
+      - name: Checkout Service Repository
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ inputs.service_repo }}
+          ref: ${{ inputs.commit_sha }}
+          token: ${{ secrets.GITHUB_PAT }}
+          path: service-code
+          
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+          
+      - name: Build with Maven
+        working-directory: ./service-code
+        run: |
+          mvn clean install
+          
+      - name: Run DevOps Scripts
+        working-directory: ./devops
+        run: |
+          # Example DevOps operations
+          echo "Building service: ${{ inputs.service_name }}"
+          echo "From repository: ${{ inputs.service_repo }}"
+          
+          # You might have service-specific scripts
+          # ./scripts/deploy.sh ${{ inputs.service_name }}
+          
+      - name: Report Build Status
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_PAT }}
+          script: |
+            const [owner, repo] = '${{ inputs.service_repo }}'.split('/');
+            await github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: ${{ inputs.pr_number }},
+              body: '✅ Build completed successfully in DevOps repository!'
+            });
