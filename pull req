@@ -1,0 +1,102 @@
+# Cross-Repository Pull Request Trigger Workflow
+
+## Workflow in Source Repository (Repo 1)
+```yaml
+name: Trigger Build in Another Repo
+
+# Trigger on pull request events
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  trigger-external-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          repository: target-org/target-repo
+          event-type: pr-build-trigger
+          client-payload: |
+            {
+              "source_repo": "${{ github.repository }}",
+              "source_branch": "${{ github.head_ref }}",
+              "pr_number": "${{ github.event.pull_request.number }}",
+              "commit_sha": "${{ github.event.pull_request.head.sha }}"
+            }
+```
+
+## Workflow in Target Repository (Repo 2)
+```yaml
+name: Build from External PR
+
+on:
+  repository_dispatch:
+    types: [pr-build-trigger]
+
+jobs:
+  build-external-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Repository
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ github.event.client_payload.source_repo }}
+          ref: ${{ github.event.client_payload.commit_sha }}
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+
+      - name: Build with Maven
+        run: |
+          mvn clean install
+          
+      - name: Create PR Comment
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            github.rest.issues.createComment({
+              owner: context.payload.client_payload.source_repo.split('/')[0],
+              repo: context.payload.client_payload.source_repo.split('/')[1],
+              issue_number: context.payload.client_payload.pr_number,
+              body: 'Build completed in target repository!'
+            })
+```
+
+
+
+name: Trigger Build in Another Repo
+
+# Trigger on pull request events
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  trigger-external-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository Dispatch
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          repository: target-org/target-repo
+          event-type: pr-build-trigger
+          client-payload: |
+            {
+              "source_repo": "${{ github.repository }}",
+              "source_branch": "${{ github.head_ref }}",
+              "pr_number": "${{ github.event.pull_request.number }}",
+              "commit_sha": "${{ github.event.pull_request.head.sha }}"
+            }
