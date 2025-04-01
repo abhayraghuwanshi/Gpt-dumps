@@ -134,3 +134,101 @@ jobs:
         issue_number: ${{ inputs.pr_number }},
         body: `Build completed. [View detailed report](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`
       });
+
+
+
+- name: Build with Maven
+  id: build
+  working-directory: ./service-code
+  continue-on-error: true
+  run: |
+    if mvn clean install; then
+      echo "status=success" >> $GITHUB_OUTPUT
+    else
+      echo "status=failure" >> $GITHUB_OUTPUT
+    fi
+
+- name: Run Tests
+  id: tests
+  working-directory: ./service-code
+  continue-on-error: true
+  run: |
+    if mvn test; then
+      echo "status=success" >> $GITHUB_OUTPUT
+    else
+      echo "status=failure" >> $GITHUB_OUTPUT
+    fi
+
+- name: Run SonarQube Analysis
+  id: sonar
+  working-directory: ./service-code
+  continue-on-error: true
+  run: |
+    if mvn sonar:sonar; then
+      echo "status=success" >> $GITHUB_OUTPUT
+    else
+      echo "status=failure" >> $GITHUB_OUTPUT
+    fi
+
+- name: Generate Detailed Report
+  if: always()
+  run: |
+    # Generate HTML report with status of each step
+    cat > build-report.html << EOF
+    <h1>Build Report for PR #${{ inputs.pr_number }}</h1>
+    
+    <h2>Step Status</h2>
+    <ul>
+      <li><strong>Build</strong>: ${{ steps.build.outputs.status == 'success' && '✅ Success' || '❌ Failure' }}</li>
+      <li><strong>Tests</strong>: ${{ steps.tests.outputs.status == 'success' && '✅ Success' || '❌ Failure' }}</li>
+      <li><strong>Sonar Analysis</strong>: ${{ steps.sonar.outputs.status == 'success' && '✅ Success' || '❌ Failure' }}</li>
+    </ul>
+    
+    <h2>Details</h2>
+    <ul>
+      <li><strong>PR Author</strong>: @${{ inputs.pr_author || github.actor }}</li>
+      <li><strong>Commit</strong>: <code>${{ inputs.commit_sha }}</code></li>
+      <li><strong>Service</strong>: ${{ inputs.service_name }}</li>
+    </ul>
+    
+    <p><em>Workflow run completed at $(date -u)</em></p>
+    EOF
+
+- name: Upload Report as Artifact
+  if: always()
+  uses: actions/upload-artifact@v3
+  with:
+    name: build-report
+    path: build-report.html
+
+- name: Comment with Artifact Link and Status
+  if: always()
+  uses: actions/github-script@v6
+  with:
+    github-token: ${{ secrets.GITHUB_PAT }}
+    script: |
+      const [owner, repo] = '${{ inputs.service_repo }}'.split('/');
+      
+      // Get overall status
+      const buildStatus = '${{ steps.build.outputs.status }}' === 'success';
+      const testStatus = '${{ steps.tests.outputs.status }}' === 'success';
+      const sonarStatus = '${{ steps.sonar.outputs.status }}' === 'success';
+      const allPassed = buildStatus && testStatus && sonarStatus;
+      
+      // Create overall status indicator
+      const statusIcon = allPassed ? '✅' : '❌';
+      const statusText = allPassed ? 'All Steps Passed' : 'Some Steps Failed';
+      
+      await github.rest.issues.createComment({
+        owner: owner,
+        repo: repo,
+        issue_number: ${{ inputs.pr_number }},
+        body: `## ${statusIcon} Build Report: ${statusText}
+        
+        ### Step Results
+        - Build: ${{ steps.build.outputs.status == 'success' && '✅ Success' || '❌ Failure' }}
+        - Tests: ${{ steps.tests.outputs.status == 'success' && '✅ Success' || '❌ Failure' }}
+        - Sonar: ${{ steps.sonar.outputs.status == 'success' && '✅ Success' || '❌ Failure' }}
+        
+        [View detailed report](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`
+      });
