@@ -1,0 +1,153 @@
+@RestController
+@RequestMapping("/api")
+public class SchedulerController {
+
+    private final DynamicTransactionScheduler scheduler;
+
+    public SchedulerController(DynamicTransactionScheduler scheduler) {
+        this.scheduler = scheduler;
+    }
+
+    @PostMapping("/manual-schedule")
+    public ResponseEntity<String> manualSchedule(@RequestParam String date) {
+        try {
+            LocalDate bookingDate = LocalDate.parse(date);
+            scheduler.scheduleBookingForDate(bookingDate);
+            return ResponseEntity.ok("Transaction manually scheduled for " + bookingDate);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Error scheduling transaction: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/scheduled-jobs")
+    public ResponseEntity<List<String>> getScheduledJobs() {
+        try {
+            return ResponseEntity.ok(scheduler.getScheduledJobs());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Collections.singletonList("Error retrieving jobs: " + e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/cancel-schedule")
+    public ResponseEntity<String> cancelSchedule(@RequestParam String date) {
+        try {
+            LocalDate bookingDate = LocalDate.parse(date);
+            boolean canceled = scheduler.cancelScheduledBooking(bookingDate);
+            return canceled ? ResponseEntity.ok("Cancelled booking for " + bookingDate)
+                            : ResponseEntity.status(HttpStatus.NOT_FOUND)
+                                .body("No booking found for " + bookingDate);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Error canceling transaction: " + e.getMessage());
+        }
+    }
+}
+
+
+@Service
+public class DynamicTransactionScheduler {
+
+    private final Scheduler scheduler;
+
+    public DynamicTransactionScheduler(Scheduler scheduler) {
+        this.scheduler = scheduler;
+    }
+
+    /**
+     * Schedule a booking transaction for a specific date.
+     * If the date falls on a holiday, it will be moved to the last working day.
+     */
+    public void scheduleBookingForDate(LocalDate bookingDate) throws SchedulerException {
+        // Create job details
+        JobDetail jobDetail = JobBuilder.newJob(BookingJob.class)
+            .withIdentity("bookingJob-" + bookingDate, "transactions")
+            .usingJobData("bookingDate", bookingDate.toString())
+            .storeDurably()
+            .build();
+
+        // Set execution time at 18:00
+        Date executionTime = Date.from(bookingDate.atTime(18, 0)
+            .atZone(ZoneId.systemDefault()).toInstant());
+
+        // Create a trigger
+        Trigger trigger = TriggerBuilder.newTrigger()
+            .withIdentity("trigger-" + bookingDate, "transactions")
+            .startAt(executionTime)
+            .withSchedule(SimpleScheduleBuilder.simpleSchedule().withMisfireHandlingInstructionFireNow())
+            .build();
+
+        // Schedule the job
+        scheduler.scheduleJob(jobDetail, trigger);
+        System.out.println("Scheduled transaction for: " + bookingDate);
+    }
+
+    /**
+     * Retrieves all currently scheduled jobs.
+     */
+    public List<String> getScheduledJobs() throws SchedulerException {
+        List<String> jobNames = new ArrayList<>();
+        for (JobKey jobKey : scheduler.getJobKeys(GroupMatcher.anyGroup())) {
+            jobNames.add(jobKey.getName());
+        }
+        return jobNames;
+    }
+
+    /**
+     * Cancels a scheduled booking.
+     */
+    public boolean cancelScheduledBooking(LocalDate date) throws SchedulerException {
+        JobKey jobKey = new JobKey("bookingJob-" + date, "transactions");
+        if (scheduler.checkExists(jobKey)) {
+            scheduler.deleteJob(jobKey);
+            return true;
+        }
+        return false;
+    }
+}
+
+
+@DisallowConcurrentExecution // Ensures only one job instance runs at a time
+public class BookingJob implements Job {
+    
+    @Autowired
+    private TransactionBookingService bookingService;
+    
+    @Autowired
+    private HolidayService holidayService;
+    
+    @Autowired
+    private EmailNotificationService emailService;
+    
+    @Override
+    public void execute(JobExecutionContext context) {
+        JobDataMap dataMap = context.getMergedJobDataMap();
+        LocalDate bookingDate = LocalDate.parse(dataMap.getString("bookingDate"));
+
+        // Adjust for holidays and weekends
+        if (holidayService.isHoliday(bookingDate)) {
+            bookingDate = holidayService.getPreviousWorkingDay(bookingDate);
+        }
+
+        // Process transactions
+        bookingService.processTransactions(bookingDate);
+
+        // Send email notification
+        emailService.sendNotification("user@example.com", "Transaction Processed",
+                "Your transaction for " + bookingDate + " has been successfully processed.");
+    }
+}
+
+
+spring:
+  quartz:
+    job-store-type: jdbc  # Use database-backed job storage
+    properties:
+      org.quartz.jobStore.class: org.quartz.impl.jdbcjobstore.JobStoreTX
+      org.quartz.jobStore.driverDelegateClass: org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
+      org.quartz.jobStore.dataSource: quartzDataSource
+      org.quartz.jobStore.tablePrefix: QRTZ_
+      org.quartz.scheduler.instanceId: AUTO
+      org.quartz.scheduler.instanceName: ClusteredScheduler
+      org.quartz.threadPool.threadCount: 10
