@@ -1,0 +1,230 @@
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.quartz.*;
+import org.quartz.impl.matchers.GroupMatcher;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class DynamicTransactionSchedulerTest {
+
+    private Scheduler scheduler;
+    private DynamicTransactionSchedulerImpl transactionScheduler;
+
+    @BeforeEach
+    void setUp() {
+        scheduler = mock(Scheduler.class);
+        transactionScheduler = new DynamicTransactionSchedulerImpl(scheduler);
+    }
+
+    @Test
+    void testScheduleBookingForDate_Success() throws Exception {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        JobDetail jobDetail = JobBuilder.newJob(BookingJob.class)
+                .withIdentity("bookingJob-" + date, "transactions")
+                .usingJobData("bookingDate", date.toString())
+                .storeDurably()
+                .build();
+        Trigger trigger = TriggerBuilder.newTrigger()
+                .withIdentity("trigger-" + date, "transactions")
+                .startAt(Date.from(date.atTime(18, 0).atZone(ZoneId.systemDefault()).toInstant()))
+                .withSchedule(SimpleScheduleBuilder.simpleSchedule().withMisfireHandlingInstructionFireNow())
+                .build();
+
+        doNothing().when(scheduler).scheduleJob(any(JobDetail.class), any(Trigger.class));
+
+        transactionScheduler.scheduleBookingForDate(date);
+
+        verify(scheduler, times(1)).scheduleJob(any(JobDetail.class), any(Trigger.class));
+    }
+
+    @Test
+    void testScheduleBookingForDate_Failure() throws Exception {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        doThrow(new SchedulerException("Quartz failure")).when(scheduler).scheduleJob(any(JobDetail.class), any(Trigger.class));
+
+        Exception exception = assertThrows(SchedulerException.class, () -> {
+            transactionScheduler.scheduleBookingForDate(date);
+        });
+
+        assertEquals("Quartz failure", exception.getMessage());
+    }
+
+    @Test
+    void testGetScheduledJobs_Success() throws Exception {
+        JobKey jobKey1 = new JobKey("bookingJob-2025-04-30", "transactions");
+        JobKey jobKey2 = new JobKey("bookingJob-2025-05-31", "transactions");
+        Set<JobKey> jobKeys = new HashSet<>(Arrays.asList(jobKey1, jobKey2));
+
+        when(scheduler.getJobKeys(GroupMatcher.anyGroup())).thenReturn(jobKeys);
+
+        List<String> jobs = transactionScheduler.getScheduledJobs();
+
+        assertEquals(2, jobs.size());
+        assertTrue(jobs.contains("bookingJob-2025-04-30"));
+        assertTrue(jobs.contains("bookingJob-2025-05-31"));
+    }
+
+    @Test
+    void testGetScheduledJobs_Failure() throws Exception {
+        when(scheduler.getJobKeys(GroupMatcher.anyGroup())).thenThrow(new SchedulerException("Fetch failed"));
+
+        Exception exception = assertThrows(SchedulerException.class, () -> {
+            transactionScheduler.getScheduledJobs();
+        });
+
+        assertEquals("Fetch failed", exception.getMessage());
+    }
+
+    @Test
+    void testCancelScheduledBooking_Success() throws Exception {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        JobKey jobKey = new JobKey("bookingJob-" + date, "transactions");
+
+        when(scheduler.checkExists(jobKey)).thenReturn(true);
+        when(scheduler.deleteJob(jobKey)).thenReturn(true);
+
+        boolean result = transactionScheduler.cancelScheduledBooking(date);
+
+        assertTrue(result);
+        verify(scheduler, times(1)).deleteJob(jobKey);
+    }
+
+    @Test
+    void testCancelScheduledBooking_NotFound() throws Exception {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        JobKey jobKey = new JobKey("bookingJob-" + date, "transactions");
+
+        when(scheduler.checkExists(jobKey)).thenReturn(false);
+
+        boolean result = transactionScheduler.cancelScheduledBooking(date);
+
+        assertFalse(result);
+    }
+
+    @Test
+    void testCancelScheduledBooking_Failure() throws Exception {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        JobKey jobKey = new JobKey("bookingJob-" + date, "transactions");
+
+        when(scheduler.checkExists(jobKey)).thenReturn(true);
+        doThrow(new SchedulerException("Delete failed")).when(scheduler).deleteJob(jobKey);
+
+        Exception exception = assertThrows(SchedulerException.class, () -> {
+            transactionScheduler.cancelScheduledBooking(date);
+        });
+
+        assertEquals("Delete failed", exception.getMessage());
+    }
+}
+
+
+
+package org.learn;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.http.ResponseEntity;
+
+import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.http.HttpStatus.*;
+
+class SchedulerControllerTest {
+
+    private DynamicTransactionScheduler scheduler;
+    private SchedulerController controller;
+
+    @BeforeEach
+    void setUp() {
+        scheduler = mock(DynamicTransactionScheduler.class);
+        controller = new SchedulerController(scheduler);
+    }
+
+    @Test
+    void testManualSchedule_Success() {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        doNothing().when(scheduler).scheduleBookingForDate(date);
+
+        ResponseEntity<String> response = controller.manualSchedule(date.toString());
+
+        assertEquals(OK, response.getStatusCode());
+        assertEquals("Transaction manually scheduled for " + date, response.getBody());
+    }
+
+    @Test
+    void testManualSchedule_Failure() {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        doThrow(new RuntimeException("Scheduling failed")).when(scheduler).scheduleBookingForDate(date);
+
+        ResponseEntity<String> response = controller.manualSchedule(date.toString());
+
+        assertEquals(INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertTrue(response.getBody().contains("Error scheduling transaction"));
+    }
+
+    @Test
+    void testGetScheduledJobs_Success() {
+        List<String> jobs = Arrays.asList("job1", "job2");
+        when(scheduler.getScheduledJobs()).thenReturn(jobs);
+
+        ResponseEntity<List<String>> response = controller.getScheduledJobs();
+
+        assertEquals(OK, response.getStatusCode());
+        assertEquals(jobs, response.getBody());
+    }
+
+    @Test
+    void testGetScheduledJobs_Failure() {
+        when(scheduler.getScheduledJobs()).thenThrow(new RuntimeException("Fetch failed"));
+
+        ResponseEntity<List<String>> response = controller.getScheduledJobs();
+
+        assertEquals(INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertTrue(response.getBody().contains("Error retrieving jobs"));
+    }
+
+    @Test
+    void testCancelSchedule_Success() {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        when(scheduler.cancelScheduledBooking(date)).thenReturn(true);
+
+        ResponseEntity<String> response = controller.cancelSchedule(date.toString());
+
+        assertEquals(OK, response.getStatusCode());
+        assertEquals("Cancelled booking for " + date, response.getBody());
+    }
+
+    @Test
+    void testCancelSchedule_NotFound() {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        when(scheduler.cancelScheduledBooking(date)).thenReturn(false);
+
+        ResponseEntity<String> response = controller.cancelSchedule(date.toString());
+
+        assertEquals(NOT_FOUND, response.getStatusCode());
+        assertEquals("No booking found for " + date, response.getBody());
+    }
+
+    @Test
+    void testCancelSchedule_Failure() {
+        LocalDate date = LocalDate.of(2025, 4, 30);
+        when(scheduler.cancelScheduledBooking(date)).thenThrow(new RuntimeException("Cancel failed"));
+
+        ResponseEntity<String> response = controller.cancelSchedule(date.toString());
+
+        assertEquals(INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertTrue(response.getBody().contains("Error canceling transaction"));
+    }
+}
