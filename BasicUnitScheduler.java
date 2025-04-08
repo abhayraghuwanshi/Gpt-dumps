@@ -65,53 +65,63 @@ class SchedulerControllerTest {
 =============================================================================
 
 
-package org.learn;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.*;
-import org.quartz.*;
+import org.learn.DynamicTransactionSchedulerImpl;
+import org.learn.service.TransactionBookingService;
+import org.learn.service.DateService;
+import org.learn.service.ReferentialServiceApi;
+
 import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.Date;
 
 import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
 
 class DynamicTransactionSchedulerImplTest {
 
-    @Mock
-    private Scheduler scheduler;
-
-    private DynamicTransactionSchedulerImpl transactionScheduler;
+    private TransactionBookingService bookingService;
+    private DateService dateService;
+    private ReferentialServiceApi referentialServiceApi;
+    private DynamicTransactionSchedulerImpl scheduler;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        transactionScheduler = new DynamicTransactionSchedulerImpl(scheduler);
+        bookingService = mock(TransactionBookingService.class);
+        dateService = mock(DateService.class);
+        referentialServiceApi = mock(ReferentialServiceApi.class);
+
+        scheduler = new DynamicTransactionSchedulerImpl(
+                bookingService,
+                dateService,
+                referentialServiceApi
+        );
     }
 
     @Test
-    void testScheduleBookingForDate_success() throws Exception {
+    void testScheduleBookingForDate_shouldProcessBooking() throws Exception {
         // Given
         LocalDate bookingDate = LocalDate.of(2025, 4, 10);
+        when(dateService.isHoliday(bookingDate)).thenReturn(false);
 
         // When
-        transactionScheduler.scheduleBookingForDate(bookingDate);
+        scheduler.scheduleBookingForDate(bookingDate);
 
         // Then
-        ArgumentCaptor<JobDetail> jobCaptor = ArgumentCaptor.forClass(JobDetail.class);
-        ArgumentCaptor<Trigger> triggerCaptor = ArgumentCaptor.forClass(Trigger.class);
-        verify(scheduler).scheduleJob(jobCaptor.capture(), triggerCaptor.capture());
+        verify(bookingService, times(1)).processTransactions(bookingDate);
+    }
 
-        JobDetail capturedJob = jobCaptor.getValue();
-        Trigger capturedTrigger = triggerCaptor.getValue();
+    @Test
+    void testScheduleBookingForDate_shouldUsePreviousWorkingDayOnHoliday() throws Exception {
+        // Given
+        LocalDate holiday = LocalDate.of(2025, 4, 13);
+        LocalDate previousWorkingDay = LocalDate.of(2025, 4, 11);
 
-        assertEquals("bookingJob-" + bookingDate, capturedJob.getKey().getName());
-        assertEquals("trigger-" + bookingDate, capturedTrigger.getKey().getName());
+        when(dateService.isHoliday(holiday)).thenReturn(true);
+        when(dateService.getPreviousWorkingDay(holiday)).thenReturn(previousWorkingDay);
 
-        Date expectedDate = Date.from(bookingDate.atTime(18, 0)
-                .atZone(ZoneId.systemDefault()).toInstant());
-        assertEquals(expectedDate, capturedTrigger.getStartTime());
+        // When
+        scheduler.scheduleBookingForDate(holiday);
+
+        // Then
+        verify(bookingService, times(1)).processTransactions(previousWorkingDay);
     }
 }
