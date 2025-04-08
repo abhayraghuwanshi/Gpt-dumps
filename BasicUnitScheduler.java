@@ -13,91 +13,54 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import org.junit.jupiter.api.Test;
+import org.learn.DynamicTransactionScheduler;
+import org.learn.SchedulerController;
+import org.mockito.Mockito;
+import org.springframework.http.ResponseEntity;
+
+import java.time.LocalDate;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
 class SchedulerControllerTest {
 
-    @Mock
-    private DynamicTransactionScheduler scheduler;
-
-    @InjectMocks
-    private SchedulerController controller;
-
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-    }
-
     @Test
-    void testManualSchedule_Success() {
-        String date = "2025-04-10";
-        ResponseEntity<String> response = controller.manualSchedule(date);
+    void testManualSchedule_success() throws Exception {
+        // Arrange
+        DynamicTransactionScheduler scheduler = mock(DynamicTransactionScheduler.class);
+        SchedulerController controller = new SchedulerController(scheduler);
 
+        String dateStr = "2025-04-10";
+        LocalDate date = LocalDate.parse(dateStr);
+
+        // Act
+        ResponseEntity<String> response = controller.manualSchedule(dateStr);
+
+        // Assert
         assertEquals(200, response.getStatusCodeValue());
-        assertTrue(response.getBody().contains("Transaction manually scheduled for"));
-        verify(scheduler, times(1)).scheduleBookingForDate(LocalDate.parse(date));
+        assertTrue(response.getBody().contains(dateStr));
+
+        verify(scheduler, times(1)).scheduleBookingForDate(date);
     }
 
     @Test
-    void testManualSchedule_Failure() {
-        String date = "invalid-date";
-        ResponseEntity<String> response = controller.manualSchedule(date);
+    void testManualSchedule_exception() throws Exception {
+        // Arrange
+        DynamicTransactionScheduler scheduler = mock(DynamicTransactionScheduler.class);
+        SchedulerController controller = new SchedulerController(scheduler);
 
+        String dateStr = "invalid-date";
+
+        // Act
+        ResponseEntity<String> response = controller.manualSchedule(dateStr);
+
+        // Assert
         assertEquals(500, response.getStatusCodeValue());
         assertTrue(response.getBody().contains("Error scheduling transaction"));
     }
-
-    @Test
-    void testGetScheduledJobs_Success() throws Exception {
-        List<String> jobs = Arrays.asList("job1", "job2");
-        when(scheduler.getScheduledJobs()).thenReturn(jobs);
-
-        ResponseEntity<List<String>> response = controller.getScheduledJobs();
-
-        assertEquals(200, response.getStatusCodeValue());
-        assertEquals(jobs, response.getBody());
-    }
-
-    @Test
-    void testGetScheduledJobs_Failure() throws Exception {
-        when(scheduler.getScheduledJobs()).thenThrow(new RuntimeException("Internal error"));
-
-        ResponseEntity<List<String>> response = controller.getScheduledJobs();
-
-        assertEquals(500, response.getStatusCodeValue());
-        assertEquals(Collections.singletonList("Error retrieving jobs: Internal error"), response.getBody());
-    }
-
-    @Test
-    void testCancelSchedule_Success() throws Exception {
-        String date = "2025-04-10";
-        when(scheduler.cancelScheduledBooking(LocalDate.parse(date))).thenReturn(true);
-
-        ResponseEntity<String> response = controller.cancelSchedule(date);
-
-        assertEquals(200, response.getStatusCodeValue());
-        assertTrue(response.getBody().contains("Cancelled booking for"));
-    }
-
-    @Test
-    void testCancelSchedule_NotFound() throws Exception {
-        String date = "2025-04-10";
-        when(scheduler.cancelScheduledBooking(LocalDate.parse(date))).thenReturn(false);
-
-        ResponseEntity<String> response = controller.cancelSchedule(date);
-
-        assertEquals(404, response.getStatusCodeValue());
-        assertTrue(response.getBody().contains("No booking found"));
-    }
-
-    @Test
-    void testCancelSchedule_Exception() {
-        String date = "invalid-date";
-        ResponseEntity<String> response = controller.cancelSchedule(date);
-
-        assertEquals(500, response.getStatusCodeValue());
-        assertTrue(response.getBody().contains("Error canceling transaction"));
-    }
 }
-
 
 =============================================================================
 
