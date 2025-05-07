@@ -86,3 +86,87 @@ class RefExternalServiceAdapterTest {
         assertTrue(ex.getMessage().contains("Unexpected Exception"));
     }
 }
+
+
+@ExtendWith(MockitoExtension.class)
+class RefExternalSvcAdapterTest {
+
+    @Mock
+    private RestTemplate restTemplate;
+
+    @InjectMocks
+    private RefExternalSvcAdapter adapter;
+
+    private InvoicePIBStatus invoicePIBStatus = new InvoicePIBStatus(); // Set fields if required
+    private Pageable pageable = PageRequest.of(0, 10);
+
+    @Test
+    void shouldReturnInvoiceListOnSuccess() {
+        PageResponse<InvoicePIB> mockPageResponse = new PageResponse<>();
+        // Fill mockPageResponse with test data if needed
+
+        ResponseEntity<PageResponse<InvoicePIB>> mockResponse =
+                new ResponseEntity<>(mockPageResponse, HttpStatus.OK);
+
+        when(restTemplate.exchange(
+                any(URI.class),
+                eq(HttpMethod.GET),
+                any(HttpEntity.class),
+                any(ParameterizedTypeReference.class)
+        )).thenReturn(mockResponse);
+
+        PageResponse<InvoicePIB> result = adapter.getInvoicePIBListByPage(invoicePIBStatus, pageable);
+        assertNotNull(result);
+        // Optionally: assertEquals(mockPageResponse.getItems().size(), result.getItems().size());
+    }
+
+    @Test
+    void shouldThrowWhenStatusIsNotOK() {
+        ResponseEntity<PageResponse<InvoicePIB>> mockResponse =
+                new ResponseEntity<>(null, HttpStatus.BAD_REQUEST);
+
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), any(ParameterizedTypeReference.class)))
+                .thenReturn(mockResponse);
+
+        RfsCustomExceptions ex = assertThrows(RfsCustomExceptions.class, () ->
+                adapter.getInvoicePIBListByPage(invoicePIBStatus, pageable));
+        assertTrue(ex.getMessage().contains("UNABLE TO FETCH INVOICE PIB LIST"));
+    }
+
+    @Test
+    void shouldThrowOnHttpClientError() {
+        when(restTemplate.exchange(any(), any(), any(), any(ParameterizedTypeReference.class)))
+                .thenThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST, "Bad request"));
+
+        RfsCustomExceptions ex = assertThrows(RfsCustomExceptions.class, () ->
+                adapter.getInvoicePIBListByPage(invoicePIBStatus, pageable));
+        assertTrue(ex.getMessage().contains("Issue with invoice fetch"));
+    }
+
+    @Test
+    void shouldThrowOnHttpServerError() {
+        when(restTemplate.exchange(any(), any(), any(), any(ParameterizedTypeReference.class)))
+                .thenThrow(new HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        assertThrows(RfsCustomExceptions.class, () ->
+                adapter.getInvoicePIBListByPage(invoicePIBStatus, pageable));
+    }
+
+    @Test
+    void shouldThrowOnRestClientError() {
+        when(restTemplate.exchange(any(), any(), any(), any(ParameterizedTypeReference.class)))
+                .thenThrow(new RestClientException("Connection refused"));
+
+        assertThrows(RfsCustomExceptions.class, () ->
+                adapter.getInvoicePIBListByPage(invoicePIBStatus, pageable));
+    }
+
+    @Test
+    void shouldThrowOnUnknownError() {
+        when(restTemplate.exchange(any(), any(), any(), any(ParameterizedTypeReference.class)))
+                .thenThrow(new RuntimeException("Unknown"));
+
+        assertThrows(RfsCustomExceptions.class, () ->
+                adapter.getInvoicePIBListByPage(invoicePIBStatus, pageable));
+    }
+}
