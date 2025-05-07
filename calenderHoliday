@@ -1,0 +1,88 @@
+@ExtendWith(MockitoExtension.class)
+class RefExternalServiceAdapterTest {
+
+    @Mock
+    private RestTemplate restTemplate;
+
+    @InjectMocks
+    private RefExternalServiceAdapter adapter; // your class under test
+
+    private static final String COUNTRY_CODE = "US";
+    private static final int YEAR = 2025;
+
+    private String buildUrl(String countryCode, int year) {
+        // build full expected URL here if needed for verification
+        return "https://some-api/api/v1/calendars/get-holidays?countryCode=" + countryCode + "&year=" + year;
+    }
+
+    @Test
+    void shouldReturnCalendarSuccessfully() {
+        HolidayCalendar mockCalendar = new HolidayCalendar(); // populate mock if needed
+        ResponseEntity<HolidayCalendar> response = new ResponseEntity<>(mockCalendar, HttpStatus.OK);
+
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(HolidayCalendar.class)))
+                .thenReturn(response);
+
+        HolidayCalendar result = adapter.fetchCalendar(COUNTRY_CODE, YEAR);
+
+        assertNotNull(result);
+        // add more assertions if needed
+    }
+
+    @Test
+    void shouldThrowExceptionWhenStatusIsNotOK() {
+        ResponseEntity<HolidayCalendar> response = new ResponseEntity<>(null, HttpStatus.INTERNAL_SERVER_ERROR);
+
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(HolidayCalendar.class)))
+                .thenReturn(response);
+
+        RfsCustomException ex = assertThrows(RfsCustomException.class,
+                () -> adapter.fetchCalendar(COUNTRY_CODE, YEAR));
+
+        assertTrue(ex.getMessage().contains("Unable to fetch calendar"));
+    }
+
+    @Test
+    void shouldThrowOnHttpClientError() {
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(HolidayCalendar.class)))
+                .thenThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST));
+
+        RfsCustomException ex = assertThrows(RfsCustomException.class,
+                () -> adapter.fetchCalendar(COUNTRY_CODE, YEAR));
+
+        assertTrue(ex.getMessage().contains("Client issue"));
+    }
+
+    @Test
+    void shouldThrowOnHttpServerError() {
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(HolidayCalendar.class)))
+                .thenThrow(new HttpServerErrorException(HttpStatus.SERVICE_UNAVAILABLE));
+
+        RfsCustomException ex = assertThrows(RfsCustomException.class,
+                () -> adapter.fetchCalendar(COUNTRY_CODE, YEAR));
+
+        assertTrue(ex.getMessage().contains("Server issue"));
+    }
+
+    @Test
+    void shouldThrowOnRestClientException() {
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(HolidayCalendar.class)))
+                .thenThrow(new RestClientException("RestTemplate error"));
+
+        RfsCustomException ex = assertThrows(RfsCustomException.class,
+                () -> adapter.fetchCalendar(COUNTRY_CODE, YEAR));
+
+        assertTrue(ex.getMessage().contains("Rest client issue"));
+    }
+
+    @Test
+    void shouldThrowOnUnexpectedException() {
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class), eq(HolidayCalendar.class)))
+                .thenThrow(new RuntimeException("Unknown error"));
+
+        RfsCustomException ex = assertThrows(RfsCustomException.class,
+                () -> adapter.fetchCalendar(COUNTRY_CODE, YEAR));
+
+        assertTrue(ex.getMessage().contains("Unexpected Exception"));
+    }
+}
