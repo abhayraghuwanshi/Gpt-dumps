@@ -1,0 +1,39 @@
+name: Handle Sonar Callback
+
+on:
+  repository_dispatch:
+    types: [sonar-complete]
+
+jobs:
+  handle-sonar-result:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log Sonar result
+        run: |
+          echo "Sonar check completed for commit: ${{ github.event.client_payload.commit }}"
+          echo "Status: ${{ github.event.client_payload.status }}"
+
+      # Optionally trigger another job or set a status, etc.
+      # For example, fail or continue conditionally
+      - name: Fail if Sonar failed
+        if: ${{ github.event.client_payload.status != 'success' }}
+        run: |
+          echo "Sonar quality gate failed"
+          exit 1
+
+
+- name: Notify app-repo of Sonar result
+  uses: actions/github-script@v7
+  with:
+    script: |
+      const res = await github.repos.createDispatchEvent({
+        owner: 'org',
+        repo: 'app-repo',
+        event_type: 'sonar-complete',
+        client_payload: {
+          commit: 'abc123def',
+          status: 'success'
+        }
+      });
+
+      console.log("Dispatch sent to app-repo:", res.status);
