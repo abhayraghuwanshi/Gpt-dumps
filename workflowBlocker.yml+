@@ -37,3 +37,29 @@ jobs:
       });
 
       console.log("Dispatch sent to app-repo:", res.status);
+
+name: Handle Sonar Completion
+
+on:
+  repository_dispatch:
+    types: [sonar-complete]
+
+jobs:
+  mark-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set commit status
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ github.event.client_payload.commit }}',
+              state: '${{ github.event.client_payload.status }}', // e.g., 'success' or 'failure'
+              context: 'sonar-check',
+              description: 'Sonar quality gate completed',
+              target_url: 'https://your-sonar-dashboard.com/report'
+            });
+
